@@ -43,8 +43,22 @@ test('register', async () => {
     expect(logout.body.message).toBe('logout successful');
   });
 
+  test('update', async () => {
+    const newUser = generateUser();
+    const updateUser = await request(app).post('/api/auth').send(newUser);
+  
+    newUser.password = 'NewNameTest';
+    const updated = await request(app).put(`/api/auth/${updateUser.body.user.id}`)
+      .set('Authorization', `Bearer ${updateUser.body.token}`).send(newUser);
+    expect(updated.status).toBe(200);
+  
+    const { ...user } = { ...newUser, roles: [{ role: 'diner' }] };
+    delete user.password;
+    expect(updated.body).toMatchObject(user);
+  });
+
   function generateUser() {
-    const newUser = { name: 'pizza diner', email: 'a', password: 'a' };
+    const newUser = { name: 'test user', email: 'test', password: 'test' };
     newUser.email = Math.random().toString(36).substring(2, 12) + '@test.com';
     return newUser
   }
