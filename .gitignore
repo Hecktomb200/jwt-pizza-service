@@ -3,4 +3,5 @@
 .vscode
 config.js
 coverage
-dist
+dist.idea
+.idea
