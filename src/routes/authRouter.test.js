@@ -32,6 +32,17 @@ test('register', async () => {
     expect(regUser.body.user).toMatchObject(user);
   });
 
+  test('logout', async () => {
+    const newUser = generateUser();
+    const logoutUser = await request(app).post('/api/auth').send(newUser);
+  
+    const logout = await request(app).delete('/api/auth')
+      .set('Authorization', `Bearer ${logoutUser.body.token}`).send();
+    expect(logout.status).toBe(200);
+  
+    expect(logout.body.message).toBe('logout successful');
+  });
+
   function generateUser() {
     const newUser = { name: 'pizza diner', email: 'a', password: 'a' };
     newUser.email = Math.random().toString(36).substring(2, 12) + '@test.com';
