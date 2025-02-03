@@ -21,6 +21,23 @@ test('login', async () => {
   expect(loginRes.body.user).toMatchObject(expectedUser);
 });
 
+test('register', async () => {
+    const newUser = generateUser();
+    const regUser = await request(app).post('/api/auth').send(newUser);
+    expect(regUser.status).toBe(200);
+    expectValidJwt(regUser.body.token);
+  
+    const { ...user } = { ...newUser, roles: [{ role: 'diner' }] };
+    delete user.password;
+    expect(regUser.body.user).toMatchObject(user);
+  });
+
+  function generateUser() {
+    const newUser = { name: 'pizza diner', email: 'a', password: 'a' };
+    newUser.email = Math.random().toString(36).substring(2, 12) + '@test.com';
+    return newUser
+  }
+
 function expectValidJwt(potentialJwt) {
   expect(potentialJwt).toMatch(/^[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*$/);
 }
