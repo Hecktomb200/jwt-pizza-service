@@ -5,7 +5,7 @@ const { Role, DB } = require('../database/database.js');
 let user;
 let token;
 let f_Id;
-let s_Id;
+//let s_Id;
 
 beforeAll(async () => {
     user = await createAdmin();
@@ -25,7 +25,7 @@ beforeAll(async () => {
     const createdStore = await request(app).post(`/api/franchise/${f_Id}/store`)
         .set('Authorization', `Bearer ${token}`).send(newStore);
     expect(createdStore.status).toBe(200);
-    s_Id = createdStore.body.id;
+    //s_Id = createdStore.body.id;
     const menuResponse = await request(app).get('/api/order/menu').send();
     if (menuResponse.body.length === 0) {
         await request(app).put('/api/order/menu')
