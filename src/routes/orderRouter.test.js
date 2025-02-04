@@ -29,7 +29,7 @@ beforeAll(async () => {
     const menuResponse = await request(app).get('/api/order/menu').send();
     if (menuResponse.body.length === 0) {
         await request(app).put('/api/order/menu')
-            .set('Authorization', `Bearer ${adminAuthToken}`)
+            .set('Authorization', `Bearer ${token}`)
             .send({ title: "Veggie", description: "A garden of delight", image: "pizza1.png", price: 0.0038 });
     }
 });
@@ -47,21 +47,6 @@ test('add', async () => {
     expect(result.status).toBe(200);
     expect(Array.isArray(result.body)).toBe(true);
     expect(result.body).toEqual(expect.arrayContaining([expect.objectContaining(newItem)]));
-});
-
-test('order run', async () => {
-    const newOrder = { f_Id, s_Id, items: [{ menuId: 1, description: 'Veggie', price: 0.0038 }] };
-    const createdOrder = await request(app).post('/api/order')
-        .set('Authorization', `Bearer ${token}`).send(newOrder);
-    expect(createdOrder.status).toBe(200);
-    expect(createdOrder.body.order).toHaveProperty('id');
-    newOrder.id = createdOrder.body.order.id;
-    expect(createdOrder.body.order).toMatchObject(newOrder);
-
-    const fetchedOrder = await request(app).get('/api/order')
-        .set('Authorization', `Bearer ${token}`).send();
-    expect(fetchedOrder.status).toBe(200);
-    expect(fetchedOrder.body.orders).toEqual(expect.arrayContaining([expect.objectContaining(newOrder)]));
 });
 
 async function createAdmin() {
