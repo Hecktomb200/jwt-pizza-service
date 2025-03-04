@@ -61,17 +61,23 @@ jobs:
       - name: Tests
         run: npm test
 
-      - name: set version
+      - name: Set version
         id: set_version
         run: |
           version=$(date +'%Y%m%d.%H%M%S')
+          echo "version=$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           printf '{"version": "%s" }' "$version" > src/version.json
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git add .
-          git commit -m "generated"
+          cat src/version.json  # Print the file contents
+          
+          # Commit and push version.json to the repository
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add src/version.json
+          git commit -m "Update version.json with version $version [CI skip]" || echo "No changes to commit"
           git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update coverage
         run: |
@@ -95,37 +101,43 @@ jobs:
           name: package
           path: dist/
 
-deploy:
-  runs-on: ubuntu-latest
-  permissions:
-    id-token: write
-  needs: build
-  env:
-    version: ${{needs.build.outputs.version}}
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    needs: build
+    env:
+      version: ${{needs.build.outputs.version}}
     steps:
-    - name: Download distribution artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: package
-    - name: Create OIDC token to AWS
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        audience: sts.amazonaws.com
-        aws-region: us-east-1
-        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT }}:role/${{ secrets.CI_IAM_ROLE }}
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v2
-    - name: Set up machine emulation
-      uses: docker/setup-qemu-action@v3
+      - name: Download distribution artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: package
 
-    - name: Set up Docker build
-      uses: docker/setup-buildx-action@v3
-    - name: Build and push container image
-      id: build-image
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: 'jwt-pizza-service'
-      run: |
-        docker build --platform=linux/arm64 -t $ECR_REGISTRY/$ECR_REPOSITORY --push .
-        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:latest" >>  $GITHUB_OUTPUT
+      - name: Create OIDC token to AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          audience: sts.amazonaws.com
+          aws-region: us-east-1
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT }}:role/${{ secrets.CI_IAM_ROLE }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up machine emulation
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker build
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push container image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: 'jwt-pizza-service'
+        run: |
+          docker build --platform=linux/arm64 -t $ECR_REGISTRY/$ECR_REPOSITORY --push .
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:latest" >>  $GITHUB_OUTPUT
+      - name: Deploy new container
+        run: |
+          aws ecs update-service --cluster jwt-pizza-service --service jwt-pizza-service --force-new-deployment
