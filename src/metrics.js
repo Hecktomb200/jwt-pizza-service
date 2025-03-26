@@ -72,12 +72,14 @@ class Metrics {
       this.sendMetricToGrafana("pizza_latency", this.pizzaLatency, "sum", "ms");
       this.sendMetricToGrafana("latency", this.latency, "sum", "ms");
 
+      /*
       console.log("Revenue: ", this.revenue);
       console.log("Sold: ", this.sold);
       console.log("Failed: ", this.pizzaFails);
 
       console.log("Pizza Latency: " + this.pizzaLatency);
       console.log("Latency: " + this.latency);
+      */
     }, 1000);
   }
 
