@@ -13,21 +13,6 @@ class Metrics {
   pizzaLatency = 0;
   latency = 0;
 
-  /*
-  postrequest = 0;
-
-  increasePostRequests() {
-    this.postrequests++;
-  }
-
-
-  - in router
-  authrouter.post('/', (req, res) => {
-      Metrics.increasePostRequests()
-    })
-
-  */
-
   constructor() {}
 
   interval() {

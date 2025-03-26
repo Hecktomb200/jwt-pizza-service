@@ -120,10 +120,10 @@ orderRouter.post(
   authRouter.authenticateToken,
   asyncHandler(async (req, res) => {
     const start = Date.now();
-    //console.log("What's up?");
+
     const orderReq = req.body;
     const order = await DB.addDinerOrder(req.user, orderReq);
-    //console.log(order);
+
     const r = await fetch(`${config.factory.url}/api/order`, {
       method: "POST",
       headers: {
@@ -138,13 +138,13 @@ orderRouter.post(
 
     logger.factoryLogger(r.status, r.headers, r.body);
     const j = await r.json();
-    //console.log(r);
+
     if (r.ok) {
       let sumPrice = 0;
       for (let i = 0; i < order.items.length; i++) {
         sumPrice = sumPrice + order.items[i].price;
       }
-      //console.log("Total price: " + sumPrice);
+
       metric.order(sumPrice, order.items.length);
 
       res.send({ order, reportSlowPizzaToFactoryUrl: j.reportUrl, jwt: j.jwt });

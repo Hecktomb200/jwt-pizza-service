@@ -1,4 +1,4 @@
-const config = require('./config.js');
+const config = require("./config.js");
 
 class Logger {
   httpLogger = (req, res, next) => {
@@ -6,34 +6,44 @@ class Logger {
     res.send = (resBody) => {
       const logData = {
         authorized: !!req.headers.authorization,
-        path: req.path,
+        path: req.originalUrl,
         method: req.method,
         statusCode: res.statusCode,
         reqBody: JSON.stringify(req.body),
         resBody: JSON.stringify(resBody),
       };
       const level = this.statusToLogLevel(res.statusCode);
-      this.log(level, 'http', logData);
+      this.log(level, "http", logData);
       res.send = send;
       return res.send(resBody);
     };
     next();
   };
 
-  dbLogger(query) {
-    this.log('info', 'db', query);
-  }
+  queryLogger = (sql, level) => {
+    const logData = {
+      sql: sql,
+    };
+    const retLevel = level;
+    this.log(retLevel, "query", logData);
+  };
 
-  factoryLogger(orderInfo) {
-    this.log('info', 'factory', orderInfo);
-  }
-
-  unhandledErrorLogger(err) {
-    this.log('error', 'unhandledError', { message: err.message, status: err.statusCode });
-  }
+  factoryLogger = (status, headers, body) => {
+    const logData = {
+      factory: "JWT Pizza Factory",
+      statusCode: status,
+      headers: headers,
+      body: body,
+    };
+    this.log("info", "factory", logData);
+  };
 
   log(level, type, logData) {
-    const labels = { component: config.logging.source, level: level, type: type };
+    const labels = {
+      component: config.logging.source,
+      level: level,
+      type: type,
+    };
     const values = [this.nowString(), this.sanitize(logData)];
     const logEvent = { streams: [{ stream: labels, values: [values] }] };
 
@@ -41,9 +51,9 @@ class Logger {
   }
 
   statusToLogLevel(statusCode) {
-    if (statusCode >= 500) return 'error';
-    if (statusCode >= 400) return 'warn';
-    return 'info';
+    if (statusCode >= 500) return "error";
+    if (statusCode >= 400) return "warn";
+    return "info";
   }
 
   nowString() {
@@ -52,23 +62,25 @@ class Logger {
 
   sanitize(logData) {
     logData = JSON.stringify(logData);
-    logData = logData.replace(/\\"password\\":\s*\\"[^"]*\\"/g, '\\"password\\": \\"*****\\"');
-    logData = logData.replace(/\\password\\=\s*\\"[^"]*\\"/g, '\\"password\\": \\"*****\\"');
-    return logData;
+    return logData.replace(
+      /\\"password\\":\s*\\"[^"]*\\"/g,
+      '\\"password\\": \\"*****\\"'
+    );
   }
 
   sendLogToGrafana(event) {
     const body = JSON.stringify(event);
     fetch(`${config.logging.url}`, {
-      method: 'post',
+      method: "post",
       body: body,
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         Authorization: `Bearer ${config.logging.userId}:${config.logging.apiKey}`,
       },
     }).then((res) => {
-      if (!res.ok) console.log('Failed to send log to Grafana');
+      if (!res.ok) console.log("Failed to send log to Grafana");
     });
   }
 }
-module.exports = new Logger();
+const logger = new Logger();
+module.exports = logger;
