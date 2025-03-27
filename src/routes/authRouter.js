@@ -3,7 +3,7 @@ const jwt = require("jsonwebtoken");
 const config = require("../config.js");
 const { asyncHandler } = require("../endpointHelper.js");
 const { DB, Role } = require("../database/database.js");
-//const metric = require("../metrics.js");
+const metric = require("../metrics.js");
 
 const authRouter = express.Router();
 
@@ -13,14 +13,30 @@ authRouter.endpoints = [
     path: "/api/auth",
     description: "Register a new user",
     example: `curl -X POST localhost:3000/api/auth -d '{"name":"pizza diner", "email":"d@jwt.com", "password":"diner"}' -H 'Content-Type: application/json'`,
-    response: { user: { id: 2, name: "pizza diner", email: "d@jwt.com", roles: [{ role: "diner" }] }, token: "tttttt" },
+    response: {
+      user: {
+        id: 2,
+        name: "pizza diner",
+        email: "d@jwt.com",
+        roles: [{ role: "diner" }],
+      },
+      token: "tttttt",
+    },
   },
   {
     method: "PUT",
     path: "/api/auth",
     description: "Login existing user",
     example: `curl -X PUT localhost:3000/api/auth -d '{"email":"a@jwt.com", "password":"admin"}' -H 'Content-Type: application/json'`,
-    response: { user: { id: 1, name: "常用名字", email: "a@jwt.com", roles: [{ role: "admin" }] }, token: "tttttt" },
+    response: {
+      user: {
+        id: 1,
+        name: "常用名字",
+        email: "a@jwt.com",
+        roles: [{ role: "admin" }],
+      },
+      token: "tttttt",
+    },
   },
   {
     method: "PUT",
@@ -28,7 +44,12 @@ authRouter.endpoints = [
     requiresAuth: true,
     description: "Update user",
     example: `curl -X PUT localhost:3000/api/auth/1 -d '{"email":"a@jwt.com", "password":"admin"}' -H 'Content-Type: application/json' -H 'Authorization: Bearer tttttt'`,
-    response: { id: 1, name: "常用名字", email: "a@jwt.com", roles: [{ role: "admin" }] },
+    response: {
+      id: 1,
+      name: "常用名字",
+      email: "a@jwt.com",
+      roles: [{ role: "admin" }],
+    },
   },
   {
     method: "DELETE",
@@ -40,13 +61,15 @@ authRouter.endpoints = [
   },
 ];
 
-async function authenticateUser (req, res, next) {
-  const token = extractToken(req);
+async function setAuthUser(req, res, next) {
+  const token = readAuthToken(req);
   if (token) {
     try {
       if (await DB.isLoggedIn(token)) {
+        // Check the database to make sure the token is valid.
         req.user = jwt.verify(token, config.jwtSecret);
-        req.user.hasRole = (role) => req.user.roles.some(r => r.role === role);
+        req.user.isRole = (role) =>
+          !!req.user.roles.find((r) => r.role === role);
       }
     } catch {
       req.user = null;
@@ -55,62 +78,103 @@ async function authenticateUser (req, res, next) {
   next();
 }
 
+// Authenticate token
 authRouter.authenticateToken = (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ message: "unauthorized" });
+    return res.status(401).send({ message: "unauthorized" });
   }
   next();
 };
 
-authRouter.post("/", asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) {
-    return res.status(400).json({ message: "name, email, and password are required" });
-  }
-  const user = await DB.addUser ({ name, email, password, roles: [{ role: Role.Diner }] });
-  const token = await generateToken(user);
-  res.json({ user, token });
-}));
+// register
+authRouter.post(
+  "/",
+  metric.track("register"),
+  asyncHandler(async (req, res) => {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) {
+      metric.auth(false);
+      return res
+        .status(400)
+        .json({ message: "name, email, and password are required" });
+    }
+    metric.auth(true);
+    const user = await DB.addUser({
+      name,
+      email,
+      password,
+      roles: [{ role: Role.Diner }],
+    });
+    const auth = await setAuth(user);
+    res.json({ user: user, token: auth });
+    metric.activeUser(true);
+  })
+);
 
-authRouter.put("/", asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
-  const user = await DB.getUser (email, password);
-  const token = await generateToken(user);
-  res.json({ user, token });
-}));
+// login
+authRouter.put(
+  "/",
+  metric.track("login"),
+  asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    const user = await DB.getUser(email, password);
+    const auth = await setAuth(user);
+    res.json({ user: user, token: auth });
+    console.log("Login!");
+    metric.activeUser(true);
+  })
+);
 
-authRouter.delete("/", authRouter.authenticateToken, asyncHandler(async (req, res) => {
-  await revokeToken(req);
-  res.json({ message: "logout successful" });
-}));
+// logout
+authRouter.delete(
+  "/",
+  metric.track("logout"),
+  authRouter.authenticateToken,
+  asyncHandler(async (req, res) => {
+    await clearAuth(req);
+    res.json({ message: "logout successful" });
+    console.log("Logout!");
+    metric.activeUser(false);
+  })
+);
 
-authRouter.put("/:userId", authRouter.authenticateToken, asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
-  const userId = Number(req.params.userId);
-  const user = req.user;
-  if (user.id !== userId && !user.hasRole(Role.Admin)) {
-    return res.status(403).json({ message: "unauthorized" });
-  }
-  const updatedUser  = await DB.updateUser (userId, email, password);
-  res.json(updatedUser );
-}));
+// updateUser
+authRouter.put(
+  "/:userId",
+  metric.track("update_user"),
+  authRouter.authenticateToken,
+  asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+    const userId = Number(req.params.userId);
+    const user = req.user;
+    if (user.id !== userId && !user.isRole(Role.Admin)) {
+      return res.status(403).json({ message: "unauthorized" });
+    }
 
-async function generateToken(user) {
+    const updatedUser = await DB.updateUser(userId, email, password);
+    res.json(updatedUser);
+  })
+);
+
+async function setAuth(user) {
   const token = jwt.sign(user, config.jwtSecret);
-  await DB.loginUser (user.id, token);
+  await DB.loginUser(user.id, token);
   return token;
 }
 
-async function revokeToken(req) {
-  const token = extractToken(req);
+async function clearAuth(req) {
+  const token = readAuthToken(req);
   if (token) {
-    await DB.logoutUser (token);
+    await DB.logoutUser(token);
   }
 }
 
-function extractToken(req) {
+function readAuthToken(req) {
   const authHeader = req.headers.authorization;
-  return authHeader ? authHeader.split(" ")[1] : null;
+  if (authHeader) {
+    return authHeader.split(" ")[1];
+  }
+  return null;
 }
 
-module.exports = { authRouter, authenticateUser  };
+module.exports = { authRouter, setAuthUser };
