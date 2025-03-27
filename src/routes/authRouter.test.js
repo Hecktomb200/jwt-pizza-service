@@ -57,12 +57,18 @@ describe("Authentication Tests", () => {
   });
 
   test("should log in an existing user", async () => {
+    const registerResponse = await request(app).post("/api/auth").send(testUser );
+    expect(registerResponse.status).toBe(200);
+    
     const loginResponse = await request(app).put("/api/auth").send(testUser );
     
     expect(loginResponse.status).toBe(200);
     expect(loginResponse.body.token).toMatch(/^[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*\.[a-zA-Z0-9\-_]*$/);
     
     const { password, ...userWithoutPassword } = { ...testUser , roles: [{ role: "diner" }] };
+    
+    expect(password).toBe(testUser .password);
+    
     expect(loginResponse.body.user).toMatchObject(userWithoutPassword);
   });
 
