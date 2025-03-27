@@ -19,7 +19,7 @@ function generateRandomName() {
 
 beforeAll(async () => {
   testUser .email = `${generateRandomName()}@test.com`;
-  const registerResponse = await request(app).post("/api/auth").send(testUser );
+  //const registerResponse = await request(app).post("/api/auth").send(testUser );
   const newAdmin = await createAdmin();
   adminUser  = await request(app).put("/api/auth").send(newAdmin);
   adminToken = adminUser .body.token;
