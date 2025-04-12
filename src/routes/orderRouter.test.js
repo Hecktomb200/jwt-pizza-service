@@ -1,132 +1,173 @@
 const request = require("supertest");
-const app = require("../service");
-const { Role, DB } = require("../database/database.js");
+const express = require("express");
+const orderRouter = require("./orderRouter");
 
-const testUser = { name: "pizza diner", email: "reg@test.com", password: "a" };
-let adminToken;
-let adminUser;
-let franchise;
+jest.mock("../database/database.js", () => ({
+  DB: {
+    getMenu: jest.fn(),
+    addMenuItem: jest.fn(),
+    getOrders: jest.fn(),
+    addDinerOrder: jest.fn(),
+  },
+  Role: {
+    Admin: "Admin",
+  },
+}));
 
-async function createAdminUser() {
-  let user = { password: "toomanysecrets", roles: [{ role: Role.Admin }] };
-  user.name = randomName();
-  user.email = user.name + "@admin.com";
+jest.mock("../config.js", () => ({
+  factory: {
+    url: "http://mockfactory.com",
+    apiKey: "mock-api-key",
+  },
+}));
 
-  user = await DB.addUser(user);
-  return { ...user, password: "toomanysecrets" };
-}
+jest.mock("../metrics.js", () => ({
+  track: () => (req, res, next) => next(),
+  order: jest.fn(),
+  orderFail: jest.fn(),
+  trackPizzaLatency: jest.fn(),
+}));
 
-async function createFranchise() {
-  let franchiseName = randomName();
+jest.mock("../logger.js", () => ({
+  factoryLogger: jest.fn(),
+}));
 
-  const newFranchise = await request(app)
-    .post("/api/franchise")
-    .set("Authorization", `Bearer ${adminToken}`)
-    .send({ name: franchiseName, admins: [{ email: adminUser.email }] });
+jest.mock("./authRouter.js", () => ({
+  authRouter: {
+    authenticateToken: (req, res, next) => {
+      req.user = {
+        id: 1,
+        name: "Test User",
+        email: "test@example.com",
+        isRole: (role) => role === "Admin",
+      };
+      next();
+    },
+  },
+}));
 
-  console.log(newFranchise.body);
-  franchise = newFranchise.body;
-  return newFranchise;
-}
+global.fetch = jest.fn();
 
-async function createStore() {
-  let storeName = randomName();
-  let number = Math.floor(Math.random() * 100);
+const { DB } = require("../database/database.js");
 
-  const newStore = await request(app)
-    .post("/api/franchise/" + franchise.id + "/store")
-    .set("Authorization", `Bearer ${adminToken}`)
-    .send({ franchiseId: number, name: storeName });
-  return newStore;
-}
+describe("orderRouter", () => {
+  let app;
 
-async function getMenu() {
-  const menuRes = await request(app).get("/api/order/menu");
-  return menuRes;
-}
+  beforeEach(() => {
+    app = express();
+    app.use(express.json());
+    app.use("/api/order", orderRouter);
+    jest.clearAllMocks();
+  });
 
-function randomName() {
-  return Math.random().toString(36).substring(2, 12);
-}
-
-function randomPrice() {
-  let priceBig = Math.floor(Math.random() * 100);
-  let priceSmall = parseFloat(Math.random().toFixed(2));
-  let newPrice = priceBig + priceSmall;
-  return newPrice;
-}
-
-beforeAll(async () => {
-  if (process.env.VSCODE_INSPECTOR_OPTIONS) {
-    jest.setTimeout(60 * 1000 * 5);
-  }
-
-  testUser.email = Math.random().toString(36).substring(2, 12) + "@test.com";
-
-  const newAdmin = await createAdminUser();
-  console.log(newAdmin);
-  const adminLogin = await request(app).put("/api/auth").send(newAdmin);
-  console.log(adminLogin.body);
-  adminToken = adminLogin.body.token;
-  adminUser = adminLogin.body.user;
-  console.log(adminUser);
-});
-
-test("get menu", async () => {
-  const menuRes = await getMenu();
-  console.log(menuRes.body);
-  expect(menuRes.status).toBe(200);
-});
-
-test("add to menu", async () => {
-  let newTitle = randomName();
-  let newDescription = randomName();
-  let newPrice = randomPrice();
-
-  const addMenu = await request(app)
-    .put("/api/order/menu")
-    .set("Authorization", `Bearer ${adminToken}`)
-    .send({
-      title: newTitle,
-      description: newDescription,
-      image: "pizza9.png",
-      price: newPrice,
+  describe("GET /api/order/menu", () => {
+    it("should return menu", async () => {
+      DB.getMenu.mockResolvedValue([{ id: 1, title: "Veggie" }]);
+      const res = await request(app).get("/api/order/menu");
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual([{ id: 1, title: "Veggie" }]);
     });
-  console.log(addMenu.body);
-  expect(addMenu.status).toBe(200);
-});
+  });
 
-test("get orders", async () => {
-  const getOrder = await request(app)
-    .get("/api/order")
-    .set("Authorization", `Bearer ${adminToken}`);
+  describe("PUT /api/order/menu", () => {
+    it("should add item when user is admin", async () => {
+      DB.addMenuItem.mockResolvedValue();
+      DB.getMenu.mockResolvedValue([{ id: 1, title: "Student" }]);
+      const res = await request(app)
+        .put("/api/order/menu")
+        .send({ title: "Student" });
+      expect(res.statusCode).toBe(200);
+      expect(DB.addMenuItem).toHaveBeenCalled();
+      expect(res.body).toEqual([{ id: 1, title: "Student" }]);
+    });
 
-  console.log(getOrder.body);
-  expect(getOrder.status).toBe(200);
-});
-test("create orders", async () => {
-  let menu = await getMenu();
-  let menuItem = menu.body[0];
-  console.log(menu.body.length);
-  console.log(menuItem);
-
-  let newFranchise = await createFranchise();
-  let newStore = await createStore();
-
-  const createOrder = await request(app)
-    .post("/api/order")
-    .set("Authorization", `Bearer ${adminToken}`)
-    .send({
-      franchiseId: newFranchise.body.id,
-      storeId: newStore.body.id,
-      items: [
-        {
-          menuId: menuItem.id,
-          description: menuItem.description,
-          price: menuItem.price,
+    it("should return 403 if user is not admin", async () => {
+      jest.resetModules();
+      jest.doMock("./authRouter.js", () => ({
+        authRouter: {
+          authenticateToken: (req, res, next) => {
+            req.user = {
+              isRole: () => false,
+            };
+            next();
+          },
         },
-      ],
+      }));
+    
+      const express = require("express");
+      const testRouter = require("./orderRouter");
+      const testApp = express();
+      testApp.use(express.json());
+      testApp.use("/api/order", testRouter);
+    
+      const res = await request(testApp)
+        .put("/api/order/menu")
+        .send({ title: "Invalid" });
+    
+      expect(res.statusCode).toBe(403);
+    });    
+    
+  });
+
+  describe("GET /api/order", () => {
+    it("should return user orders", async () => {
+      DB.getOrders.mockResolvedValue({ orders: [] });
+      const res = await request(app).get("/api/order");
+      expect(res.statusCode).toBe(200);
+      expect(DB.getOrders).toHaveBeenCalled();
     });
-  console.log(createOrder.body);
-  expect(createOrder.status).toBe(200);
+  });
+
+  describe("POST /api/order", () => {
+    it("should create order successfully", async () => {
+      const order = {
+        id: 1,
+        items: [{ menuId: 1, price: 0.05 }],
+        franchiseId: 1,
+        storeId: 1,
+      };
+      DB.addDinerOrder.mockResolvedValue(order);
+      fetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {},
+        body: "response body",
+        json: () => Promise.resolve({ reportUrl: "url", jwt: "token" }),
+      });
+
+      const res = await request(app)
+        .post("/api/order")
+        .send({ items: [{ menuId: 1, price: 0.05 }] });
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body.order).toEqual(order);
+      expect(res.body.jwt).toBe("token");
+    });
+
+    it("should return 500 if factory fails", async () => {
+      DB.addDinerOrder.mockResolvedValue({
+        items: [{ menuId: 1, price: 0.05 }],
+      });
+      fetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+        headers: {},
+        body: "response body",
+        json: () =>
+          Promise.resolve({
+            reportUrl: "error-url",
+          }),
+      });
+
+      const res = await request(app)
+        .post("/api/order")
+        .send({ items: [{ menuId: 1, price: 0.05 }] });
+
+      expect(res.statusCode).toBe(500);
+      expect(res.body.message).toMatch(/Failed to fulfill order/);
+      expect(res.body.reportPizzaCreationErrorToPizzaFactoryUrl).toBe(
+        "error-url"
+      );
+    });
+  });
 });
