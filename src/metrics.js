@@ -1,5 +1,5 @@
-const config = require("./config");
 const os = require("os");
+const config = require("./config");
 
 class Metrics {
   requests = {};
@@ -18,53 +18,31 @@ class Metrics {
   interval() {
     setInterval(() => {
       const cpuValue = this.getCpuUsagePercentage();
-      this.sendMetricToGrafana("cpu", cpuValue, "gauge", "%");
+      this.sendMetricToGrafana("cpu_percentage", cpuValue, "gauge", "%");
 
       const memoryValue = Math.round(this.getMemoryUsagePercentage());
-      //console.log("Memory Usage Value:", memoryValue, typeof memoryValue);
-      this.sendMetricToGrafana("memory", memoryValue, "gauge", "%");
-
-      //this.requests += Math.floor(Math.random() * 200) + 1;
-      //this.sendMetricToGrafana("requests", this.requests, "sum", "1");
+      this.sendMetricToGrafana("memory_percentage", memoryValue, "gauge", "%");
 
       Object.keys(this.requests).forEach((endpoint) => {
-        //console.log(endpoint, " has ", this.requests[endpoint]);
         this.sendMetricToGrafanaObject("requests", this.requests[endpoint], {
           endpoint,
         });
       });
 
       Object.keys(this.HTTPrequests).forEach((method) => {
-        //console.log(method, " has ", this.HTTPrequests[method]);
-        this.sendMetricToGrafanaObject(
-          "HTTPrequests",
-          this.HTTPrequests[method],
-          {
-            method,
-          }
-        );
+        this.sendMetricToGrafanaObject("HTTPrequests", this.HTTPrequests[method], {
+          method,
+        });
       });
 
-      let rich = this.revenue * 100;
-
-      this.sendMetricToGrafana("sold_pizzas", this.sold, "sum", "1");
-      this.sendMetricToGrafana("revenue", parseInt(rich), "sum", "1");
-      this.sendMetricToGrafana("failed_pizzas", this.pizzaFails, "sum", "1");
-      this.sendMetricToGrafana("auth_success", this.authSuccess, "sum", "1");
-      this.sendMetricToGrafana("auth_fail", this.authFail, "sum", "1");
-
-      this.sendMetricToGrafana("active_users", this.activeUsers, "sum", "1");
-      this.sendMetricToGrafana("pizza_latency", this.pizzaLatency, "sum", "ms");
-      this.sendMetricToGrafana("latency", this.latency, "sum", "ms");
-
-      /*
-      console.log("Revenue: ", this.revenue);
-      console.log("Sold: ", this.sold);
-      console.log("Failed: ", this.pizzaFails);
-
-      console.log("Pizza Latency: " + this.pizzaLatency);
-      console.log("Latency: " + this.latency);
-      */
+      this.sendMetricToGrafana("sold_pizzas_total", this.sold, "sum", "1");
+      this.sendMetricToGrafana("revenue_total", Math.round(this.revenue * 100), "sum", "1");
+      this.sendMetricToGrafana("failed_pizzas_total", this.pizzaFails, "sum", "1");
+      this.sendMetricToGrafana("auth_success_total", this.authSuccess, "sum", "1");
+      this.sendMetricToGrafana("auth_fail_total", this.authFail, "sum", "1");
+      this.sendMetricToGrafana("active_users_total", this.activeUsers, "sum", "1");
+      this.sendMetricToGrafana("pizza_latency_milliseconds_total", this.pizzaLatency, "sum", "ms");
+      this.sendMetricToGrafana("latency_milliseconds_total", this.latency, "sum", "ms");
     }, 1000);
   }
 
@@ -86,11 +64,8 @@ class Metrics {
       const start = Date.now();
       const method = req.method;
 
-      //console.log(method);
       this.HTTPrequests[method] = (this.HTTPrequests[method] || 0) + 1;
-      //Track endpoints
       this.requests[endpoint] = (this.requests[endpoint] || 0) + 1;
-      //console.log(`Tracking ${endpoint} request`);
 
       res.on("finish", () => {
         this.latency = Date.now() - start;
@@ -100,27 +75,27 @@ class Metrics {
   }
 
   order(price, pizzas) {
-    this.revenue = this.revenue + price;
-    this.sold = this.sold + pizzas;
+    this.revenue += price;
+    this.sold += pizzas;
   }
 
   orderFail() {
-    this.pizzaFails = this.pizzaFails + 1;
+    this.pizzaFails += 1;
   }
 
   auth(status) {
     if (status) {
-      this.authSuccess = this.authSuccess + 1;
+      this.authSuccess += 1;
     } else {
-      this.authFail = this.authFail + 1;
+      this.authFail += 1;
     }
   }
 
-  activeUser(status) {
+  activeUser (status) {
     if (status) {
-      this.activeUsers = this.activeUsers + 1;
+      this.activeUsers += 1;
     } else {
-      this.activeUsers = this.activeUsers - 1;
+      this.activeUsers -= 1;
     }
   }
 
@@ -155,12 +130,8 @@ class Metrics {
     };
 
     if (type === "sum") {
-      metric.resourceMetrics[0].scopeMetrics[0].metrics[0][
-        type
-      ].aggregationTemporality = "AGGREGATION_TEMPORALITY_CUMULATIVE";
-      metric.resourceMetrics[0].scopeMetrics[0].metrics[0][
-        type
-      ].isMonotonic = true;
+      metric.resourceMetrics[0].scopeMetrics[0].metrics[0][type].aggregationTemporality = "AGGREGATION_TEMPORALITY_CUMULATIVE";
+      metric.resourceMetrics[0].scopeMetrics[0].metrics[0][type].isMonotonic = true;
     }
 
     const body = JSON.stringify(metric);
@@ -175,12 +146,8 @@ class Metrics {
       .then((response) => {
         if (!response.ok) {
           response.text().then((text) => {
-            console.error(
-              `Failed to push metrics data to Grafana: ${text}\n${body}`
-            );
+            console.error(`Failed to push metrics data to Grafana: ${text}\n${body}`);
           });
-        } else {
-          //console.log(`Pushed ${metricName}`);
         }
       })
       .catch((error) => {
@@ -208,8 +175,7 @@ class Metrics {
                         attributes: [],
                       },
                     ],
-                    aggregationTemporality:
-                      "AGGREGATION_TEMPORALITY_CUMULATIVE",
+                    aggregationTemporality: "AGGREGATION_TEMPORALITY_CUMULATIVE",
                     isMonotonic: true,
                   },
                 },
@@ -221,12 +187,10 @@ class Metrics {
     };
 
     Object.keys(attributes).forEach((key) => {
-      metric.resourceMetrics[0].scopeMetrics[0].metrics[0].sum.dataPoints[0].attributes.push(
-        {
-          key: key,
-          value: { stringValue: attributes[key] },
-        }
-      );
+      metric.resourceMetrics[0].scopeMetrics[0].metrics[0].sum.dataPoints[0].attributes.push({
+        key: key,
+        value: { stringValue: attributes[key] },
+      });
     });
 
     fetch(`${config.metrics.url}`, {
@@ -240,8 +204,6 @@ class Metrics {
       .then((response) => {
         if (!response.ok) {
           console.error("Failed to push metrics data to Grafana");
-        } else {
-          //console.log(`Pushed ${metricName}`);
         }
       })
       .catch((error) => {
